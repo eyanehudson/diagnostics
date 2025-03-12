@@ -44,6 +44,8 @@ from diagnostic_updater import DiagnosticTask, Updater
 import psutil
 
 import rclpy
+from rclpy.logging import get_logger
+
 
 
 class RamTask(DiagnosticTask):
@@ -64,6 +66,7 @@ class RamTask(DiagnosticTask):
                 DiagnosticStatus.WARN,
                 f'RAM Average exceeds {self._warning_percentage:d} percent',
             )
+            get_logger('ram_monitor').warn(f"RAM LOAD AVERAGE ABOVE {self._warning_percentage} PERCENT")
         else:
             stat.summary(DiagnosticStatus.OK, f'RAM Average {ram_average:.2f} percent')
 

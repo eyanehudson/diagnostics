@@ -47,15 +47,17 @@ import psutil
 
 import rclpy
 from rclpy.node import Node
+from rclpy.logging import get_logger
 
 
 class CpuTask(DiagnosticTask):
 
-    def __init__(self, warning_percentage=90, window=1):
+    def __init__(self, warning_percentage=90, window=1, warning_core = 20):
         DiagnosticTask.__init__(self, 'CPU Information')
 
         self._warning_percentage = int(warning_percentage)
         self._readings = deque(maxlen=window)
+        self._warning_core = int(warning_core)
 
     def _get_average_reading(self):
         def avg(lst):
@@ -66,23 +68,30 @@ class CpuTask(DiagnosticTask):
 
     def run(self, stat):
         self._readings.append(psutil.cpu_percent(percpu=True))
-        cpu_percentages = self._get_average_reading()
-        cpu_average = sum(cpu_percentages) / len(cpu_percentages)
+        cpu_percentages = self._get_average_reading() # look over all cpu cores and get the average percentage
+        cpu_average = sum(cpu_percentages) / len(cpu_percentages) # average the percentage over all cores
+        num_cores = sum(cpu_percentages)/100 # add the percentages to find the number of cores used
 
-        stat.add('CPU Load Average', f'{cpu_average:.2f}')
+        stat.add('CPU Load Average (cores)', f'{num_cores:.2f}')
 
         warn = False
         for idx, cpu_percentage in enumerate(cpu_percentages):
             stat.add(f'CPU {idx} Load', f'{cpu_percentage:.2f}')
-            if cpu_percentage > self._warning_percentage:
+            if cpu_percentage > self._warning_percentage: # if one cpu core is greater than warning percentage (90% by default), then warn = true
                 warn = True
 
         if warn:
             stat.summary(DiagnosticStatus.WARN,
-                         f'At least one CPU exceeds {self._warning_percentage} percent')
+                         f'At least one CPU core exceeds {self._warning_percentage} percent')
+            
+        if num_cores > self._warning_core:
+            stat.summary(DiagnosticStatus.WARN,
+                         f'CPU LOAD AVERAGE ABOVE {self._warning_core} CORES')
+            get_logger('cpu_monitor').warn(f'CPU LOAD AVERAGE ABOVE {self._warning_core} CORES')
+
         else:
             stat.summary(DiagnosticStatus.OK,
-                         f'CPU Average {cpu_average:.2f} percent')
+                         f'CPU Average {num_cores:.2f} cores')
 
         return stat
 
@@ -101,15 +110,17 @@ def main(args=None):
     # Declare and get parameters
     node.declare_parameter('warning_percentage', 90)
     node.declare_parameter('window', 1)
+    node.declare_parameter('warning_core', 20) #TODO: set for AV24 Autera, if cpu cores are changed, update this value.
 
     warning_percentage = node.get_parameter(
         'warning_percentage').get_parameter_value().integer_value
     window = node.get_parameter('window').get_parameter_value().integer_value
+    warning_core = node.get_parameter('warning_core').get_parameter_value().integer_value
 
     # Create diagnostic updater with default updater rate of 1 hz
     updater = Updater(node)
     updater.setHardwareID(hostname)
-    updater.add(CpuTask(warning_percentage=warning_percentage, window=window))
+    updater.add(CpuTask(warning_percentage=warning_percentage, window=window, warning_core=warning_core))
 
     rclpy.spin(node)
 

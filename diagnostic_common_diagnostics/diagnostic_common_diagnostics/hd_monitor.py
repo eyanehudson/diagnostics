@@ -47,6 +47,9 @@ from diagnostic_updater import Updater
 from rcl_interfaces.msg import SetParametersResult
 import rclpy
 from rclpy.node import Node
+from rclpy.logging import get_logger
+import os
+
 
 
 FREE_PERCENT_LOW = 0.05
@@ -81,9 +84,25 @@ class HDMonitor(Node):
             c if (c.isascii() and c.isalnum()) else '_' for c in hostname)
         super().__init__(f'hd_monitor_{cleaned_hostname}')
 
-        self._path = '~'
-        self._free_percent_low = 0.05
-        self._free_percent_crit = 0.01
+
+
+        #############################
+        # TODO: Change these parameters if the storage location or size changes
+
+        # if running on the car, use the dsu0, if not use the home directory
+        if os.path.exists('/mnt/dsu0'):  
+            self._path = '/mnt/dsu0'      # /mnt/dsu0 is where rosbags are stored
+        else: 
+            self._path = '~'              
+        self._free_percent_low = 0.07 # about 1 TB
+        self._free_percent_crit = 0.03 # about 500 GB
+
+        ##############################
+
+
+
+
+
 
         self.add_on_set_parameters_callback(self.callback_config)
         self.declare_parameter('path', self._path)
@@ -128,8 +147,11 @@ class HDMonitor(Node):
             diag.level = DiagnosticStatus.OK
         elif percent > self._free_percent_crit:
             diag.level = DiagnosticStatus.WARN
+            get_logger('HD_monitor').warn(f'DSU0 is low on space, consider removing old data soon. There is {percent:.2f} percent storage remaining')
         else:
             diag.level = DiagnosticStatus.ERROR
+            get_logger('HD_monitor').error(f'DSU0 is CRITICALLY low on space. Remove old data before running car. There is {percent:.2f} percent storage remaining')
+
 
         total_go = total // (1024 * 1024)
         diag.values.extend(
